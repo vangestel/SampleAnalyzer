@@ -11,16 +11,19 @@ GSBusAnalyzerSettings::GSBusAnalyzerSettings()
 	mCommandChannel(UNDEFINED_CHANNEL),
 	mStatusChannel(UNDEFINED_CHANNEL),
 
+	mBitsPerFrame(256),
+	mChannelsPerFrame(8),
+	mDataBitsPerChannel(24),
+	mStatusBitsPerChannel(7),
+	mParityBitsPerChannel(1),
+
 	mShiftOrder(AnalyzerEnums::MsbFirst),
 	mDataValidEdge(AnalyzerEnums::NegEdge),
-	mBitsPerWord(16),
-
-	mWordAlignment(LEFT_ALIGNED),
-	mFrameType(FRAME_TRANSITION_ONCE_EVERY_WORD),
-	mBitAlignment(BITS_SHIFTED_RIGHT_1),
-	mSigned(AnalyzerEnums::UnsignedInteger),
-	mWordSelectInverted(WS_NOT_INVERTED)
+	mSigned(AnalyzerEnums::UnsignedInteger)
 {
+	// START OF GSBUS SETTINGS
+
+	// Channel setup
 	mClockChannelInterface.reset(new AnalyzerSettingInterfaceChannel());
 	mClockChannelInterface->SetTitleAndTooltip("CLOCK", "Clock, aka CMD_CLK");
 	mClockChannelInterface->SetChannel(mClockChannel);
@@ -37,8 +40,54 @@ GSBusAnalyzerSettings::GSBusAnalyzerSettings()
 	mStatusChannelInterface->SetTitleAndTooltip("STATUS", "Status Data, aka STAT_D");
 	mStatusChannelInterface->SetChannel(mStatusChannel);
 
+	// Bits per frame (2-512, default 256)
+	mBitsPerFrameInterface.reset(new AnalyzerSettingInterfaceNumberList());
+	mBitsPerFrameInterface->SetTitleAndTooltip("", "Specify the number of bits/frame (GSBus standard: 256).  Any additional bits will be ignored");
+	char str[256];
+	for (U32 i = 1; i <= 256; i++)
+	{
+		sprintf(str, "%d Bits/Frame", 2 * i);
+		mBitsPerFrameInterface->AddNumber(2 * i, str, "Specify the number of bits/frame (GSBus standard: 256).  Any additional bits will be ignored");
+	}
+	mBitsPerFrameInterface->SetNumber(mBitsPerFrame);
 
+	// Channels per frame (1-16, default 8)
+	mChannelsPerFrameInterface.reset(new AnalyzerSettingInterfaceNumberList());
+	mChannelsPerFrameInterface->SetTitleAndTooltip("", "Specify the number of channels per frame (GSBus standard: 8).");
+	str[256];
+	for (U32 i = 1; i <= 8; i++)
+	{
+		sprintf(str, "%d Channels/Frame", 2 * i);
+		mChannelsPerFrameInterface->AddNumber(2 * i, str, "Specify the number of channels per frame (GSBus standard: 8).");
+	}
+	mChannelsPerFrameInterface->SetNumber(mChannelsPerFrame);
 
+	// Data bits per channel (2-64, default 24)
+	mDataBitsPerChannelInterface.reset(new AnalyzerSettingInterfaceNumberList());
+	mDataBitsPerChannelInterface->SetTitleAndTooltip("", "Specify the number of data bits/channel (GSBus standard: 24).");
+	str[256];
+	for (U32 i = 1; i <= 32; i++)
+	{
+		sprintf(str, "%d DataBits/Channel", 2 * i);
+		mDataBitsPerChannelInterface->AddNumber(2 * i, str, "Specify the number of data bits/channel (GSBus standard: 24).");
+	}
+	mDataBitsPerChannelInterface->SetNumber(mDataBitsPerChannel);
+
+	// Status bits per channel (0-16, default 7)
+	mStatusBitsPerChannelInterface.reset(new AnalyzerSettingInterfaceNumberList());
+	mStatusBitsPerChannelInterface->SetTitleAndTooltip("", "Specify the number of status bits/channel (GSBus standard: 7).");
+	str[256];
+	for (U32 i = 0; i <= 16; i++)
+	{
+		sprintf(str, "%d StatusBits/Channel", i);
+		mStatusBitsPerChannelInterface->AddNumber(i, str, "Specify the number of status bits/channel (GSBus standard: 7).");
+	}
+	mStatusBitsPerChannelInterface->SetNumber(mStatusBitsPerChannel);
+
+	// Parity bits per channel, autocalculated (default 1)
+	mParityBitsPerChannel = (mBitsPerFrame / mChannelsPerFrame) - mDataBitsPerChannel - mStatusBitsPerChannel;
+
+	// END OF GSBUS SETTINGS
 
 	mShiftOrderInterface.reset(new AnalyzerSettingInterfaceNumberList());
 	mShiftOrderInterface->SetTitleAndTooltip("", "Specify if data comes in MSB first, or LSB first.");
@@ -52,65 +101,23 @@ GSBusAnalyzerSettings::GSBusAnalyzerSettings()
 	mDataValidEdgeInterface->AddNumber(AnalyzerEnums::PosEdge, "DATA is valid (should be read) on the CLOCK rising edge", "");
 	mDataValidEdgeInterface->SetNumber(mDataValidEdge);
 
-	mBitsPerWordInterface.reset(new AnalyzerSettingInterfaceNumberList());
-	mBitsPerWordInterface->SetTitleAndTooltip("", "Specify the number of bits/word.  Any additional bits will be ignored");
-	char str[256];
-	for (U32 i = 2; i <= 64; i++)
-	{
-		sprintf(str, "%d Bits/Word (bits/sample)", i);
-		mBitsPerWordInterface->AddNumber(i, str, "Specify the number of bits/word.  Any additional bits will be ignored");
-	}
-	mBitsPerWordInterface->SetNumber(mBitsPerWord);
-
-
-
-	//enum PcmFrameType { FRAME_TRANSITION_TWICE_EVERY_WORD, FRAME_TRANSITION_ONCE_EVERY_WORD, FRAME_TRANSITION_TWICE_EVERY_FOUR_WORDS };
-	mFrameTypeInterface.reset(new AnalyzerSettingInterfaceNumberList());
-	mFrameTypeInterface->SetTitleAndTooltip("", "Specify the type of frame signal used.");
-	mFrameTypeInterface->AddNumber(FRAME_TRANSITION_ONCE_EVERY_WORD, "FRAME signal pulses once each word.", "");
-	mFrameTypeInterface->AddNumber(FRAME_TRANSITION_ONCE_EVERY_TWO_WORDS, "FRAME signal pulses once every two (2) words.", "");
-	mFrameTypeInterface->AddNumber(FRAME_TRANSITION_ONCE_EVERY_FOUR_WORDS, "FRAME signal pulses twice every four (4) words.", "");
-	mFrameTypeInterface->AddNumber(FRAME_TRANSITION_ONCE_EVERY_EIGHT_WORDS, "FRAME signal pulses twice every eight (8) words (GSBus standard).", "");
-	mFrameTypeInterface->SetNumber(mFrameType);
-
-	mWordAlignmentInterface.reset(new AnalyzerSettingInterfaceNumberList());
-	mWordAlignmentInterface->SetTitleAndTooltip("", "Specify whether data bits are left or right aligned wrt FRAME edges. Only needed if more bits are sent than needed each frame, and additional bits are ignored.");
-	mWordAlignmentInterface->AddNumber(LEFT_ALIGNED, "DATA bits are left-aligned with respect to FRAME edges", "Specify whether data bits are left or right aligned wrt FRAME edges. Only needed if more bits are sent than needed each frame, and additional bits are ignored.");
-	mWordAlignmentInterface->AddNumber(RIGHT_ALIGNED, "DATA bits are right-aligned with respect to FRAME edges", "Specify whether data bits are left or right aligned wrt FRAME edges. Only needed if more bits are sent than needed each frame, and additional bits are ignored.");
-	mWordAlignmentInterface->SetNumber(mWordAlignment);
-
-	//enum PcmBitAlignment { FIRST_FRAME_BIT_BELONGS_TO_PREVIOUS_WORD, FIRST_FRAME_BIT_BELONGS_TO_CURRENT_WORD };
-	mBitAlignmentInterface.reset(new AnalyzerSettingInterfaceNumberList());
-	mBitAlignmentInterface->SetTitleAndTooltip("", "Specify the bit alignment type to use.");
-	mBitAlignmentInterface->AddNumber(BITS_SHIFTED_RIGHT_1, "Bits are right-shifted by one with respect to FRAME edges (GSBus standard)", "In GSBus, bits are typically right shifted by one");
-	mBitAlignmentInterface->AddNumber(NO_SHIFT, "Bits are not shifted with respect to FRAME edges", "");
-	mBitAlignmentInterface->SetNumber(mBitAlignment);
-
 	mSignedInterface.reset(new AnalyzerSettingInterfaceNumberList());
 	mSignedInterface->SetTitleAndTooltip("", "Select whether samples are unsigned or signed values (only shows up if the display type is decimal)");
 	mSignedInterface->AddNumber(AnalyzerEnums::UnsignedInteger, "Samples are unsigned numbers", "Interpret samples as unsigned integers");
 	mSignedInterface->AddNumber(AnalyzerEnums::SignedInteger, "Samples are signed (two's complement)", "Interpret samples as signed integers -- only when display type is set to decimal");
 	mSignedInterface->SetNumber(mSigned);
 
-
-	mWordSelectInvertedInterface.reset(new AnalyzerSettingInterfaceNumberList());
-	mWordSelectInvertedInterface->SetTitleAndTooltip("", "Select weather WS high is channel 1 or channel 2");
-	mWordSelectInvertedInterface->AddNumber(WS_NOT_INVERTED, "Word select high is channel 2 (right) (I2S typical)", "when word select (FRAME) is logic 1, data is channel 2.");
-	mWordSelectInvertedInterface->AddNumber(WS_INVERTED, "Word select high is channel 1 (left) (inverted)", "when word select (FRAME) is logic 1, data is channel 1.");
-	mWordSelectInvertedInterface->SetNumber(mWordSelectInverted);
-
 	AddInterface(mClockChannelInterface.get());
 	AddInterface(mFrameChannelInterface.get());
 	AddInterface(mCommandChannelInterface.get());
 	AddInterface(mStatusChannelInterface.get());
+	AddInterface(mBitsPerFrameInterface.get());
+	AddInterface(mChannelsPerFrameInterface.get());
+	AddInterface(mDataBitsPerChannelInterface.get());
+	AddInterface(mStatusBitsPerChannelInterface.get());
 	AddInterface(mShiftOrderInterface.get());
 	AddInterface(mDataValidEdgeInterface.get());
-	AddInterface(mBitsPerWordInterface.get());
-	AddInterface(mFrameTypeInterface.get());
-	AddInterface(mWordAlignmentInterface.get());
-	AddInterface(mBitAlignmentInterface.get());
 	AddInterface(mSignedInterface.get());
-	AddInterface(mWordSelectInvertedInterface.get());
 
 	//AddExportOption( 0, "Export as text/csv file", "text (*.txt);;csv (*.csv)" );
 	AddExportOption(0, "Export as text/csv file");
@@ -170,17 +177,15 @@ bool GSBusAnalyzerSettings::SetSettingsFromInterfaces()
 	mCommandChannel = command_channel;
 	mStatusChannel = status_channel;
 
+	mBitsPerFrame = mBitsPerFrameInterface->GetNumber();
+	mChannelsPerFrame = mChannelsPerFrameInterface->GetNumber();
+	mDataBitsPerChannel = mDataBitsPerChannelInterface->GetNumber();
+	mStatusBitsPerChannel = mStatusBitsPerChannelInterface->GetNumber();
+	mParityBitsPerChannel = (mBitsPerFrame / mChannelsPerFrame) - mDataBitsPerChannel - mStatusBitsPerChannel;
+
 	mShiftOrder = AnalyzerEnums::ShiftOrder(U32(mShiftOrderInterface->GetNumber()));
 	mDataValidEdge = AnalyzerEnums::EdgeDirection(U32(mDataValidEdgeInterface->GetNumber()));
-	mBitsPerWord = U32(mBitsPerWordInterface->GetNumber());
-
-	mWordAlignment = PcmWordAlignment(U32(mWordAlignmentInterface->GetNumber()));
-	mFrameType = PcmFrameType(U32(mFrameTypeInterface->GetNumber()));
-	mBitAlignment = PcmBitAlignment(U32(mBitAlignmentInterface->GetNumber()));
-
 	mSigned = AnalyzerEnums::Sign(U32(mSignedInterface->GetNumber()));
-
-	mWordSelectInverted = PcmWordSelectInverted(U32(mWordSelectInvertedInterface->GetNumber()));
 
 	//AddExportOption( 0, "Export as text/csv file", "text (*.txt);;csv (*.csv)" );
 
@@ -200,17 +205,14 @@ void GSBusAnalyzerSettings::UpdateInterfacesFromSettings()
 	mCommandChannelInterface->SetChannel(mCommandChannel);
 	mStatusChannelInterface->SetChannel(mStatusChannel);
 
+	mBitsPerFrameInterface->SetNumber(mBitsPerFrame);
+	mChannelsPerFrameInterface->SetNumber(mChannelsPerFrame);
+	mDataBitsPerChannelInterface->SetNumber(mDataBitsPerChannel);
+	mStatusBitsPerChannelInterface->SetNumber(mStatusBitsPerChannel);
+
 	mShiftOrderInterface->SetNumber(mShiftOrder);
 	mDataValidEdgeInterface->SetNumber(mDataValidEdge);
-	mBitsPerWordInterface->SetNumber(mBitsPerWord);
-
-	mWordAlignmentInterface->SetNumber(mWordAlignment);
-	mFrameTypeInterface->SetNumber(mFrameType);
-	mBitAlignmentInterface->SetNumber(mBitAlignment);
-
 	mSignedInterface->SetNumber(mSigned);
-
-	mWordSelectInvertedInterface->SetNumber(mWordSelectInverted);
 }
 
 void GSBusAnalyzerSettings::LoadSettings( const char* settings )
@@ -228,22 +230,19 @@ void GSBusAnalyzerSettings::LoadSettings( const char* settings )
 	text_archive >> mCommandChannel;
 	text_archive >> mStatusChannel;
 
+	text_archive >> *(U32*)&mBitsPerFrame;
+	text_archive >> *(U32*)&mChannelsPerFrame;
+	text_archive >> *(U32*)&mDataBitsPerChannel;
+	text_archive >> *(U32*)&mStatusBitsPerChannel;
+	text_archive >> *(U32*)&mParityBitsPerChannel;
+
 	text_archive >> *(U32*)&mShiftOrder;
 	text_archive >> *(U32*)&mDataValidEdge;
-	text_archive >> mBitsPerWord;
-
-	text_archive >> *(U32*)&mWordAlignment;
-	text_archive >> *(U32*)&mFrameType;
-	text_archive >> *(U32*)&mBitAlignment;
 
 	//check to make sure loading it actual works befor assigning the result -- do this when adding settings to an anylzer which has been previously released.
 	AnalyzerEnums::Sign sign;
 	if (text_archive >> *(U32*)&sign)
 		mSigned = sign;
-
-	PcmWordSelectInverted word_inverted;
-	if (text_archive >> *(U32*)&word_inverted)
-		mWordSelectInverted = word_inverted;
 
 	ClearChannels();
 	AddChannel(mClockChannel, "CLOCK", true);
@@ -265,17 +264,15 @@ const char* GSBusAnalyzerSettings::SaveSettings()
 	text_archive << mCommandChannel;
 	text_archive << mStatusChannel;
 
+	text_archive << mBitsPerFrame;
+	text_archive << mChannelsPerFrame;
+	text_archive << mDataBitsPerChannel;
+	text_archive << mStatusBitsPerChannel;
+	text_archive << mParityBitsPerChannel;
+
 	text_archive << mShiftOrder;
 	text_archive << mDataValidEdge;
-	text_archive << mBitsPerWord;
-
-	text_archive << mWordAlignment;
-	text_archive << mFrameType;
-	text_archive << mBitAlignment;
-
 	text_archive << mSigned;
-
-	text_archive << mWordSelectInverted;
 
 	return SetReturnString(text_archive.GetString());
 }

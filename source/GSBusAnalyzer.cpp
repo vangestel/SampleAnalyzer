@@ -3,6 +3,10 @@
 #include <AnalyzerChannelData.h>
 #include <AnalyzerHelpers.h>
 
+#include <sstream>
+#include <string>
+#include <cstring>
+
 GSBusAnalyzer::GSBusAnalyzer()
 :	Analyzer2(),  
 	mSettings( new GSBusAnalyzerSettings() ),
@@ -21,6 +25,7 @@ void GSBusAnalyzer::SetupResults()
 	mResults.reset( new GSBusAnalyzerResults( this, mSettings.get() ) );
 	SetAnalyzerResults( mResults.get() );
 	mResults->AddChannelBubblesWillAppearOn( mSettings->mCommandChannel );
+	mResults->AddChannelBubblesWillAppearOn(mSettings->mStatusChannel);
 }
 
 void GSBusAnalyzer::WorkerThread()
@@ -50,228 +55,6 @@ void GSBusAnalyzer::WorkerThread()
 	}
 }
 
-//enum PcmFrameType { FRAME_TRANSITION_TWICE_EVERY_WORD, FRAME_TRANSITION_ONCE_EVERY_WORD, FRAME_TRANSITION_TWICE_EVERY_FOUR_WORDS };
-void GSBusAnalyzer::AnalyzeFrame()
-{
-	U32 num_bits = mCommandBits.size();
-
-	U32 num_frames = 0;
-	switch (mSettings->mFrameType)
-	{
-	case FRAME_TRANSITION_ONCE_EVERY_WORD:
-		num_frames = 1;
-		break;
-	case FRAME_TRANSITION_ONCE_EVERY_TWO_WORDS:
-		num_frames = 2;
-		break;
-	case FRAME_TRANSITION_ONCE_EVERY_FOUR_WORDS:
-		num_frames = 4;
-		break;
-	case FRAME_TRANSITION_ONCE_EVERY_EIGHT_WORDS:
-		num_frames = 8;
-		break;
-	default:
-		AnalyzerHelpers::Assert("unexpected");
-		break;
-	}
-
-	if ((num_bits % num_frames) != 0)
-	{
-		Frame frame;
-		frame.mType = U8(ErrorDoesntDivideEvenly);
-		frame.mFlags = DISPLAY_AS_ERROR_FLAG;
-		frame.mStartingSampleInclusive = mCommandValidEdges.front();
-		frame.mEndingSampleInclusive = mCommandValidEdges.back();
-		mResults->AddFrame(frame);
-		return;
-	}
-
-	U32 bits_per_frame = num_bits / num_frames;
-	U32 num_audio_bits = mSettings->mBitsPerWord;
-
-	if (bits_per_frame < num_audio_bits)
-	{
-		//enum I2sResultType { Channel1, Cahannel2, ErrorTooFewBits, ErrorDoesntDivideEvenly };
-		Frame frame;
-		frame.mType = U8(ErrorTooFewBits);
-		frame.mFlags = DISPLAY_AS_ERROR_FLAG;
-		frame.mStartingSampleInclusive = mCommandValidEdges.front();
-		frame.mEndingSampleInclusive = mCommandValidEdges.back();
-		mResults->AddFrame(frame);
-		return;
-	}
-
-	U32 num_unused_bits = bits_per_frame - num_audio_bits;
-	U32 starting_offset;
-
-	if (mSettings->mWordAlignment == LEFT_ALIGNED)
-		starting_offset = 0;
-	else
-		starting_offset = num_unused_bits;
-
-	for (U32 i = 0; i<num_frames; i++)
-	{
-		AnalyzeSubFrame(i*bits_per_frame + starting_offset, num_audio_bits, i);
-	}
-}
-
-void GSBusAnalyzer::AnalyzeSubFrame(U32 starting_index, U32 num_bits, U32 subframe_index)
-{
-	U64 result = 0;
-	U32 target_count = starting_index + num_bits;
-
-	if (mSettings->mShiftOrder == AnalyzerEnums::LsbFirst)
-	{
-		U64 bit_value = 1ULL;
-		for (U32 i = starting_index; i<target_count; i++)
-		{
-			if (mCommandBits[i] == BIT_HIGH)
-				result |= bit_value;
-
-			bit_value <<= 1;
-		}
-
-		bit_value = 1ULL;
-		for (U32 i = starting_index; i<target_count; i++)
-		{
-			if (mStatusBits[i] == BIT_HIGH)
-				result |= bit_value;
-
-			bit_value <<= 1;
-		}
-	}
-	else
-	{
-		U64 bit_value = 1ULL << (num_bits - 1);
-		for (U32 i = starting_index; i<target_count; i++)
-		{
-			if (mCommandBits[i] == BIT_HIGH)
-				result |= bit_value;
-
-			bit_value >>= 1;
-		}
-
-		bit_value = 1ULL << (num_bits - 1);
-		for (U32 i = starting_index; i<target_count; i++)
-		{
-			if (mStatusBits[i] == BIT_HIGH)
-				result |= bit_value;
-
-			bit_value >>= 1;
-		}
-	}
-
-	//enum I2sResultType { Channel1, Channel2, ErrorTooFewBits, ErrorDoesntDivideEvenly };
-	//add result bubble
-	Frame frame;
-	frame.mData1 = result;
-
-
-	U32 channel_1_polarity = 1;
-	if (mSettings->mWordSelectInverted == WS_INVERTED)
-		channel_1_polarity = 0;
-
-	if ((subframe_index & 0x1) == channel_1_polarity)
-		frame.mType = U8(Channel1);
-	else
-		frame.mType = U8(Channel2);
-
-	frame.mFlags = 0;
-	frame.mStartingSampleInclusive = mCommandValidEdges[starting_index];
-	frame.mEndingSampleInclusive = mCommandValidEdges[starting_index + num_bits - 1];
-	mResults->AddFrame(frame);
-}
-
-
-void GSBusAnalyzer::SetupForGettingFirstFrame()
-{
-	GetNextBit(mLastCommand, mLastStatus, mLastFrame, mLastSample); //we have to throw away one bit to get enough history on the FRAME line.
-
-	for (; ; )
-	{
-		GetNextBit(mCurrentCommand, mCurrentStatus, mCurrentFrame, mCurrentSample);
-
-		if (mCurrentFrame == BIT_HIGH && mLastFrame == BIT_LOW)
-		{
-			if (mSettings->mBitAlignment == BITS_SHIFTED_RIGHT_1)
-			{
-				//we need to advance to the next bit past the frame.
-				mLastFrame = mCurrentFrame;
-				mLastCommand = mCurrentCommand;
-				mLastStatus = mCurrentStatus;
-				mLastSample = mCurrentSample;
-
-				GetNextBit(mCurrentCommand, mCurrentStatus, mCurrentFrame, mCurrentSample);
-			}
-			return;
-		}
-
-		mLastFrame = mCurrentFrame;
-		mLastCommand = mCurrentCommand;
-		mLastStatus = mCurrentStatus;
-		mLastSample = mCurrentSample;
-	}
-}
-
-void GSBusAnalyzer::GetFrame()
-{
-	//on entering this function: 
-	//mCurrentFrame and mCurrentData are the values of the first bit -- that belongs to us -- in the frame.
-	//mLastFrame and mLastData are the values from the bit just before.
-
-	mCommandBits.clear();
-	mStatusBits.clear();
-	mCommandValidEdges.clear();
-	mStatusValidEdges.clear();
-
-	mCommandBits.push_back(mCurrentCommand);
-	mStatusBits.push_back(mCurrentStatus);
-	mCommandValidEdges.push_back(mCurrentSample);
-	mStatusValidEdges.push_back(mCurrentSample);
-
-	mLastFrame = mCurrentFrame;
-	mLastCommand = mCurrentCommand;
-	mLastStatus = mCurrentStatus;
-	mLastSample = mCurrentSample;
-
-	for (; ; )
-	{
-		GetNextBit(mCurrentCommand, mCurrentStatus, mCurrentFrame, mCurrentSample);
-
-		if (mCurrentFrame == BIT_HIGH && mLastFrame == BIT_LOW)
-		{
-			if (mSettings->mBitAlignment == BITS_SHIFTED_RIGHT_1)
-			{
-				//this bit belongs to us:
-				mCommandBits.push_back(mCurrentCommand);
-				mStatusBits.push_back(mCurrentStatus);
-				mCommandValidEdges.push_back(mCurrentSample);
-				mStatusValidEdges.push_back(mCurrentSample);
-
-				//we need to advance to the next bit past the frame.
-				mLastFrame = mCurrentFrame;
-				mLastCommand = mCurrentCommand;
-				mLastStatus = mCurrentStatus;
-				mLastSample = mCurrentSample;
-
-				GetNextBit(mCurrentCommand, mCurrentStatus, mCurrentFrame, mCurrentSample);
-			}
-
-			return;
-		}
-
-		mCommandBits.push_back(mCurrentCommand);
-		mStatusBits.push_back(mCurrentStatus);
-		mCommandValidEdges.push_back(mCurrentSample);
-		mStatusValidEdges.push_back(mCurrentSample);
-
-		mLastFrame = mCurrentFrame;
-		mLastCommand = mCurrentCommand;
-		mLastStatus = mCurrentStatus;
-		mLastSample = mCurrentSample;
-	}
-}
-
 void GSBusAnalyzer::SetupForGettingFirstBit()
 {
 	if (mSettings->mDataValidEdge == AnalyzerEnums::PosEdge)
@@ -288,9 +71,177 @@ void GSBusAnalyzer::SetupForGettingFirstBit()
 	}
 }
 
+void GSBusAnalyzer::SetupForGettingFirstFrame()
+{
+	GetNextBit(mLastCommand, mLastStatus, mLastFrame, mLastSample); //we have to throw away one bit to get enough history on the FRAME line.
+
+	for (; ; )
+	{
+		GetNextBit(mCurrentCommand, mCurrentStatus, mCurrentFrame, mCurrentSample);
+
+		// The edge at which the frame sync signal transitions from high to low is the first valid frame bit.
+		if (mCurrentFrame == BIT_LOW && mLastFrame == BIT_HIGH)
+		{
+			return;
+		}
+
+		mLastFrame = mCurrentFrame;
+		mLastCommand = mCurrentCommand;
+		mLastStatus = mCurrentStatus;
+		mLastSample = mCurrentSample;
+	}
+}
+
+void GSBusAnalyzer::GetFrame()
+{
+	//on entering this function: 
+	//mCurrentFrame and mCurrentData are the values of the first bit -- that belongs to us -- in the frame.
+	//mLastFrame and mLastData are the values from the bit just before.
+
+	// Clear the valid bits buffers and the valid edges index buffers.
+	mCommandBits.clear();
+	mStatusBits.clear();
+	mCommandValidEdges.clear();
+	mStatusValidEdges.clear();
+
+	// The current data bit is already valid, so add it to the valid bits buffer.
+	mCommandBits.push_back(mCurrentCommand);
+	mStatusBits.push_back(mCurrentStatus);
+	mCommandValidEdges.push_back(mCurrentSample);
+	mStatusValidEdges.push_back(mCurrentSample);
+
+	mLastFrame = mCurrentFrame;
+	mLastCommand = mCurrentCommand;
+	mLastStatus = mCurrentStatus;
+	mLastSample = mCurrentSample;
+
+	for (; ; )
+	{
+		GetNextBit(mCurrentCommand, mCurrentStatus, mCurrentFrame, mCurrentSample);
+
+		// The edge at which the frame sync signal transitions from low to high is the last valid frame bit.
+		if (mCurrentFrame == BIT_LOW && mLastFrame == BIT_HIGH)
+		{
+			return;
+		}
+
+		// Include the last valid bit.
+		mCommandBits.push_back(mCurrentCommand);
+		mStatusBits.push_back(mCurrentStatus);
+		mCommandValidEdges.push_back(mCurrentSample);
+		mStatusValidEdges.push_back(mCurrentSample);
+
+		mLastFrame = mCurrentFrame;
+		mLastCommand = mCurrentCommand;
+		mLastStatus = mCurrentStatus;
+		mLastSample = mCurrentSample;
+	}
+}
+
+void GSBusAnalyzer::AnalyzeFrame()
+{
+	U32 num_bits = mCommandBits.size();
+	U32 num_channels = mSettings->mChannelsPerFrame;
+
+	if ((num_bits % num_channels) != 0)
+	{
+		Frame frame;
+		frame.mType = 255;
+		frame.mFlags = DISPLAY_AS_ERROR_FLAG;
+		frame.mStartingSampleInclusive = mCommandValidEdges.front();
+		frame.mEndingSampleInclusive = mCommandValidEdges.back();
+		mResults->AddFrame(frame);
+		return;
+	}
+
+	U32 bits_per_channel = num_bits / num_channels;
+	U32 databits_per_channel = mSettings->mDataBitsPerChannel;
+
+	if (bits_per_channel < databits_per_channel)
+	{
+		Frame frame;
+		frame.mType = 254;
+		frame.mFlags = DISPLAY_AS_ERROR_FLAG;
+		frame.mStartingSampleInclusive = mCommandValidEdges.front();
+		frame.mEndingSampleInclusive = mCommandValidEdges.back();
+		mResults->AddFrame(frame);
+		return;
+	}
+
+	for (U8 i = 0; i < mSettings->mChannelsPerFrame; i++)
+	{
+		AnalyzeSubFrame(i * bits_per_channel, databits_per_channel, i);
+	}
+}
+
+void GSBusAnalyzer::AnalyzeSubFrame(U32 starting_index, U32 num_bits, U8 channel_index)
+{
+	// Convert the data bit buffer for each channel/subframe to its numeric value.
+	U64 commandResult = 0;
+	U64 statusResult = 0;
+	U32 target_count = starting_index + num_bits;
+
+	if (mSettings->mShiftOrder == AnalyzerEnums::LsbFirst)
+	{
+		U64 bit_value = 1ULL;
+		for (U32 i = starting_index; i < target_count; i++)
+		{
+			if (mCommandBits[i] == BIT_HIGH)
+				commandResult |= bit_value;
+
+			bit_value <<= 1;
+		}
+
+		bit_value = 1ULL;
+		for (U32 i = starting_index; i < target_count; i++)
+		{
+			if (mStatusBits[i] == BIT_HIGH)
+				statusResult |= bit_value;
+
+			bit_value <<= 1;
+		}
+	}
+	else
+	{
+		U64 bit_value = 1ULL << (num_bits - 1);
+		for (U32 i = starting_index; i < target_count; i++)
+		{
+			if (mCommandBits[i] == BIT_HIGH)
+				commandResult |= bit_value;
+
+			bit_value >>= 1;
+		}
+
+		bit_value = 1ULL << (num_bits - 1);
+		for (U32 i = starting_index; i < target_count; i++)
+		{
+			if (mStatusBits[i] == BIT_HIGH)
+				statusResult |= bit_value;
+
+			bit_value >>= 1;
+		}
+	}
+
+	// Assign the numeric result data to the frame object.
+	Frame frame;
+	frame.mData1 = commandResult;
+	frame.mData2 = statusResult;
+
+	// Set the channel index as the frame type.
+	frame.mType = channel_index;
+
+	// Set other frame data.
+	frame.mFlags = 0;
+	frame.mStartingSampleInclusive = mCommandValidEdges[starting_index];
+	frame.mEndingSampleInclusive = mCommandValidEdges[starting_index + num_bits - 1];
+
+	// Add the frame to the aggregated results.
+	mResults->AddFrame(frame);
+}
+
 void GSBusAnalyzer::GetNextBit(BitState& command, BitState& status, BitState& frame, U64& sample_number)
 {
-	//we always start off here so that the next edge is where the data is valid.
+	// Advance to the next edge, which will be negative.
 	mClock->AdvanceToNextEdge();
 	U64 data_valid_sample = mClock->GetSampleNumber();
 
@@ -307,7 +258,8 @@ void GSBusAnalyzer::GetNextBit(BitState& command, BitState& status, BitState& fr
 
 	mResults->AddMarker(data_valid_sample, mArrowMarker, mSettings->mClockChannel);
 
-	mClock->AdvanceToNextEdge();  //advance one more, so we're ready for next this function is called.
+	// Advance to the next positive edge, so that the next one is again a negative edge.
+	mClock->AdvanceToNextEdge();
 }
 
 U32 GSBusAnalyzer::GenerateSimulationData(U64 newest_sample_requested, U32 sample_rate, SimulationChannelDescriptor** simulation_channels)

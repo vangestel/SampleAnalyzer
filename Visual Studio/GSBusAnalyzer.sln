@@ -5,8 +5,6 @@ VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "GSBusAnalyzer", "GSBusAnalyzer.vcxproj", "{D7556E7E-A6BF-4BCE-BDC8-E66D2874C301}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "I2SExample", "..\I2SExample\I2SExample.vcxproj", "{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -23,14 +21,6 @@ Global
 		{D7556E7E-A6BF-4BCE-BDC8-E66D2874C301}.Release|Win32.Build.0 = Release|Win32
 		{D7556E7E-A6BF-4BCE-BDC8-E66D2874C301}.Release|x64.ActiveCfg = Release|x64
 		{D7556E7E-A6BF-4BCE-BDC8-E66D2874C301}.Release|x64.Build.0 = Release|x64
-		{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}.Debug|Win32.ActiveCfg = Debug|Win32
-		{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}.Debug|Win32.Build.0 = Debug|Win32
-		{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}.Debug|x64.ActiveCfg = Debug|x64
-		{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}.Debug|x64.Build.0 = Debug|x64
-		{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}.Release|Win32.ActiveCfg = Release|Win32
-		{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}.Release|Win32.Build.0 = Release|Win32
-		{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}.Release|x64.ActiveCfg = Release|x64
-		{D3C5AC38-D11C-4EE0-A11D-9F7A0C821D7A}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

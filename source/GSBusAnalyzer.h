@@ -22,10 +22,10 @@ public:
 	virtual bool NeedsRerun();
 
 #pragma warning( push )
-#pragma warning( disable : 4251 ) //warning C4251: 'I2sAnalyzer::<...>' : class <...> needs to have dll-interface to be used by clients of class
+#pragma warning( disable : 4251 ) //warning C4251: 'GSBusAnalyzer::<...>' : class <...> needs to have dll-interface to be used by clients of class
 
 protected: //functions
-	void AnalyzeSubFrame(U32 starting_index, U32 num_bits, U32 subframe_index);
+	void AnalyzeSubFrame(U32 starting_index, U32 num_bits, U8 channel_index);
 	void AnalyzeFrame();
 	void SetupForGettingFirstFrame();
 	void GetFrame();

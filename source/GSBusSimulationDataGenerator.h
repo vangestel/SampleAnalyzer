@@ -7,7 +7,6 @@
 
 class GSBusAnalyzerSettings;
 
-enum ChannelSelector { Ch1, Ch2, Ch3, Ch4, Ch5, Ch6, Ch7, Ch8 };
 enum BitGenerarionState { Init, LeftPadding, Data, RightPadding };
 
 class GSBusSimulationDataGenerator
@@ -32,19 +31,12 @@ protected:
 protected: //GSBus specitic
 	void InitSineWave();
 	void WriteBit(BitState command, BitState status, BitState frame);
-	S32 GetNextAudioWord();
+	S32 GetNextDataWord();
 	BitState GetNextCommandBit();
 	BitState GetNextStatusBit();
 	BitState GetNextFrameBit();
 
-	std::vector<int> mSineWaveSamples1;
-	std::vector<int> mSineWaveSamples2;
-	std::vector<int> mSineWaveSamples3;
-	std::vector<int> mSineWaveSamples4;
-	std::vector<int> mSineWaveSamples5;
-	std::vector<int> mSineWaveSamples6;
-	std::vector<int> mSineWaveSamples7;
-	std::vector<int> mSineWaveSamples8;
+	std::vector<int> mSineWaveSamples;
 
 	ClockGenerator mClockGenerator;
 
@@ -52,17 +44,15 @@ protected: //GSBus specitic
 	U32 mCurrentFrameBitIndex;
 
 	std::vector<U32> mBitMasks;
-	U32 mCurrentAudioWordIndex;
-
-	ChannelSelector mCurrentAudioChannel;
+	U32 mCurrentWordIndex;
+	U32 mCurrentChannel;
 	U32 mCurrentBitIndex;
 	int mCurrentWord;
 	U32 mPaddingCount;
 	BitGenerarionState mBitGenerationState;
 
 	//Fake data settings:
-	double mAudioSampleRate;
-	bool mUseShortFrames;
+	double mSampleRate;
 	U32 mNumPaddingBits;
 };
 #endif //GSBUS_SIMULATION_DATA_GENERATOR
