@@ -51,7 +51,7 @@ GSBusAnalyzerSettings::GSBusAnalyzerSettings()
 	}
 	mBitsPerFrameInterface->SetNumber(mBitsPerFrame);
 
-	// Channels per frame (1-16, default 8)
+	// Channels per frame (2-16, default 8)
 	mChannelsPerFrameInterface.reset(new AnalyzerSettingInterfaceNumberList());
 	mChannelsPerFrameInterface->SetTitleAndTooltip("", "Specify the number of channels per frame (GSBus standard: 8).");
 	str[256];

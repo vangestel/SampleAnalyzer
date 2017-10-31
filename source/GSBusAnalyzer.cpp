@@ -170,7 +170,7 @@ void GSBusAnalyzer::AnalyzeFrame()
 
 	for (U8 i = 0; i < mSettings->mChannelsPerFrame; i++)
 	{
-		AnalyzeSubFrame(i * bits_per_channel, databits_per_channel, i);
+		AnalyzeSubFrame((i * bits_per_channel) + mSettings->mParityBitsPerChannel + mSettings->mStatusBitsPerChannel, databits_per_channel, i);
 	}
 }
 
